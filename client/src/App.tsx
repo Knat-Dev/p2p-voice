@@ -56,49 +56,76 @@ function App() {
     };
   }, []);
 
-  const callPeer = (id: string) => {
+  const callPeer = async (id: string) => {
     if (stream) {
-      const peer = new Peer({
-        initiator: true,
-        trickle: false,
-        stream,
-        config: {
-          iceServers: [
-            {
-              urls: 'stun:numb.viagenie.ca',
-              username: 'sultan1640@gmail.com',
-              credential: '98376683',
-            },
-            {
-              urls: 'turn:numb.viagenie.ca',
-              username: 'sultan1640@gmail.com',
-              credential: '98376683',
-            },
-          ],
-        },
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          {
+            urls: 'stun:stun.l.google.com:19302',
+          },
+          {
+            urls: 'turn:numb.viagenie.ca',
+            credential: 'qweasd',
+            username: 'knat.dev.93@gmail.com',
+          },
+        ],
       });
-      setStartingCall(true);
-      setReceiverId(id);
 
-      peer.on('signal', (data) => {
-        setStartingCall(false);
-        setReceiverId('');
-        socket.current?.emit('callUser', {
-          userToCall: id,
-          signalData: data,
-          from: yourID,
-        });
+      stream.getTracks().forEach((track) => pc.addTrack(track));
+
+      pc.onicecandidate = (e) => {
+        if (!e.candidate) return;
+        console.log(e.candidate.candidate);
+      };
+
+      pc.onicecandidateerror = (e) => {
+        console.log(e);
+      };
+
+      const offer = await pc.createOffer();
+      pc.setLocalDescription(offer);
+      console.log(offer);
+      setReceiverId('');
+      socket.current?.emit('callUser', {
+        userToCall: id,
+        signalData: offer,
+        from: yourID,
       });
-      peer.on('stream', (stream: MediaStream) => {
-        console.log('got partner stream!');
-        if (partnerAudio.current) {
-          partnerAudio.current.srcObject = stream;
-        }
-      });
+      console.log(yourID);
+      // const peer = new Peer({
+      //   initiator: true,
+      //   trickle: false,
+      //   stream,
+      //   config: {
+      //     iceServers: [
+      //       {
+      //         urls: 'stun:stun.l.google.com:19302?transport=udp',
+      //       },
+      //     ],
+      //   },
+      // });
+
+      // peer.on('error', (e) => console.log(e));
+
+      // peer.on('signal', (data) => {
+      //   setStartingCall(false);
+      //   setReceiverId('');
+      //   socket.current?.emit('callUser', {
+      //     userToCall: id,
+      //     signalData: data,
+      //     from: yourID,
+      //   });
+      // });
+      // peer.on('stream', (stream: MediaStream) => {
+      //   console.log('got partner stream!');
+      //   if (partnerAudio.current) {
+      //     partnerAudio.current.srcObject = stream;
+      //   }
+      // });
 
       socket.current?.on('callAccepted', (signal: SignalData) => {
         setCallAccepted(true);
-        peer.signal(signal);
+        console.log(signal);
       });
     }
   };
@@ -109,7 +136,21 @@ function App() {
         initiator: false,
         trickle: false,
         stream,
+        config: {
+          iceServers: [
+            {
+              urls: 'stun:stun.l.google.com:19302?transport=tcp',
+            },
+            {
+              urls: 'turn:turn01.hubl.in?transport=tcp',
+              credential: 'qweasd',
+              username: 'knat.dev.93@gmail.com',
+            },
+          ],
+        },
       });
+
+      peer.on('error', (e) => console.log(JSON.stringify(e)));
 
       peer.on('signal', (data) => {
         socket.current?.emit('acceptCall', { signal: data, to: caller });
@@ -174,7 +215,7 @@ function App() {
                       </Button>
                     </Flex>
                   </ListItem>
-                ) : null
+                ) : null,
               )}
             </List>
           </Box>
