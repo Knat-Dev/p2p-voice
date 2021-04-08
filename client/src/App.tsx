@@ -68,9 +68,11 @@ function App() {
 
     socket.current.on('hey', async (data: any) => {
       console.log(data.signal);
-      await peer.current?.setRemoteDescription(
-        new RTCSessionDescription(data.signal),
-      );
+      setTimeout(async () => {
+        await peer.current?.setRemoteDescription(
+          new RTCSessionDescription(data.signal),
+        );
+      }, 1000);
       setReceivingCall(true);
       setCaller(data.from);
     });
@@ -149,7 +151,7 @@ function App() {
           to: caller,
         });
       }
-    }, 100);
+    }, 1000);
   };
 
   const rejectCall = async (initiator: boolean) => {
