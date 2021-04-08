@@ -8,7 +8,7 @@ import {
   Text,
 } from '@chakra-ui/react';
 import React, { useEffect, useRef, useState } from 'react';
-import Peer, { SignalData } from 'simple-peer';
+import { SignalData } from 'simple-peer';
 import { io, Socket } from 'socket.io-client';
 import './App.css';
 
@@ -17,15 +17,21 @@ function App() {
   const [users, setUsers] = useState<{ [key: string]: string }>({});
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [receivingCall, setReceivingCall] = useState(false);
-  const [startingCall, setStartingCall] = useState(false);
+  const [callingUser, setCallingUser] = useState(false);
   const [receiverId, setReceiverId] = useState('');
   const [caller, setCaller] = useState('');
-  const [callerSignal, setCallerSignal] = useState<any>(null);
   const [callAccepted, setCallAccepted] = useState(false);
 
   const userAudio = useRef<HTMLAudioElement | null>(null);
   const partnerAudio = useRef<HTMLAudioElement | null>(null);
   const socket = useRef<Socket | null>(null);
+
+  // Signle peer per client
+  const peer = useRef<RTCPeerConnection>(
+    new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    }),
+  );
 
   useEffect(() => {
     socket.current = io('ws://localhost:8000');
@@ -33,7 +39,20 @@ function App() {
       // set my own stream..
       setStream(stream);
       // if ref was rendered set stream into audio tag srcObject..
-      if (userAudio.current) userAudio.current.srcObject = stream;
+      if (userAudio.current) {
+        userAudio.current.srcObject = stream;
+
+        stream
+          .getTracks()
+          .forEach((track) => peer.current?.addTrack(track, stream));
+      }
+      peer.current.ontrack = (e) => {
+        console.log(e);
+        if (partnerAudio.current) partnerAudio.current.srcObject = e.streams[0];
+      };
+      peer.current.onicecandidateerror = (e) => {
+        console.log(e);
+      };
     });
 
     socket.current.on('yourID', (id: string) => {
@@ -44,134 +63,108 @@ function App() {
       setUsers(users);
     });
 
-    // I'm getting called..
-    socket.current.on('hey', (data: any) => {
+    socket.current.on('hey', async (data: any) => {
+      await peer.current?.setRemoteDescription(
+        new RTCSessionDescription(data.signal),
+      );
       setReceivingCall(true);
       setCaller(data.from);
-      setCallerSignal(data.signal);
+    });
+
+    socket.current.on('onicecandidate', async (candidate: RTCIceCandidate) => {
+      try {
+        await peer.current?.addIceCandidate(candidate);
+      } catch (e) {}
+    });
+
+    socket.current?.on('callAccepted', async (signal: SignalData) => {
+      setCallAccepted(true);
+      await peer.current?.setRemoteDescription(signal);
+      console.log(signal);
+    });
+
+    socket.current.on('rejectCall', () => {
+      setCallingUser(false);
+      setReceivingCall(false);
     });
 
     return () => {
+      socket.current?.off('callAccepted');
+      socket.current?.off('onicecandidate');
       socket.current?.disconnect();
     };
   }, []);
 
   const callPeer = async (id: string) => {
-    if (stream) {
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          {
-            urls: 'stun:stun.l.google.com:19302',
-          },
-          {
-            urls: 'turn:numb.viagenie.ca',
-            credential: 'qweasd',
-            username: 'knat.dev.93@gmail.com',
-          },
-        ],
-      });
+    if (stream && peer.current) {
+      setReceiverId(id);
+      setCallingUser(true);
 
-      stream.getTracks().forEach((track) => pc.addTrack(track));
+      const offer = await peer.current.createOffer();
+      await peer.current.setLocalDescription(offer);
 
-      pc.onicecandidate = (e) => {
+      // peer.current.ontrack = (e) => {
+      //   console.log(e);
+      //   if (partnerAudio.current) partnerAudio.current.srcObject = e.streams[0];
+      // };
+
+      peer.current.onicecandidate = (e) => {
         if (!e.candidate) return;
-        console.log(e.candidate.candidate);
+        socket.current?.emit('onicecandidate', {
+          candidate: e.candidate,
+          to: id,
+        });
       };
 
-      pc.onicecandidateerror = (e) => {
-        console.log(e);
-      };
-
-      const offer = await pc.createOffer();
-      pc.setLocalDescription(offer);
       console.log(offer);
-      setReceiverId('');
       socket.current?.emit('callUser', {
         userToCall: id,
         signalData: offer,
         from: yourID,
       });
-      console.log(yourID);
-      // const peer = new Peer({
-      //   initiator: true,
-      //   trickle: false,
-      //   stream,
-      //   config: {
-      //     iceServers: [
-      //       {
-      //         urls: 'stun:stun.l.google.com:19302?transport=udp',
-      //       },
-      //     ],
-      //   },
-      // });
-
-      // peer.on('error', (e) => console.log(e));
-
-      // peer.on('signal', (data) => {
-      //   setStartingCall(false);
-      //   setReceiverId('');
-      //   socket.current?.emit('callUser', {
-      //     userToCall: id,
-      //     signalData: data,
-      //     from: yourID,
-      //   });
-      // });
-      // peer.on('stream', (stream: MediaStream) => {
-      //   console.log('got partner stream!');
-      //   if (partnerAudio.current) {
-      //     partnerAudio.current.srcObject = stream;
-      //   }
-      // });
-
-      socket.current?.on('callAccepted', (signal: SignalData) => {
-        setCallAccepted(true);
-        console.log(signal);
-      });
     }
   };
-  const acceptCall = () => {
-    if (stream) {
+
+  const acceptCall = async () => {
+    if (stream && peer.current) {
+      const answer = await peer.current.createAnswer();
+      await peer.current.setLocalDescription(new RTCSessionDescription(answer));
+
+      // peer.current.onicecandidate = (e) => {
+      //   socket.current?.emit('onicecandidate', {
+      //     candidate: e.candidate,
+      //     to: caller,
+      //   });
+      // };
+
+      socket.current?.emit('acceptCall', {
+        signal: answer,
+        to: caller,
+      });
+
       setCallAccepted(true);
-      const peer = new Peer({
-        initiator: false,
-        trickle: false,
-        stream,
-        config: {
-          iceServers: [
-            {
-              urls: 'stun:stun.l.google.com:19302?transport=tcp',
-            },
-            {
-              urls: 'turn:turn01.hubl.in?transport=tcp',
-              credential: 'qweasd',
-              username: 'knat.dev.93@gmail.com',
-            },
-          ],
-        },
+    }
+  };
+
+  const rejectCall = async (initiator: boolean) => {
+    setCallingUser(false);
+    setReceivingCall(false);
+    if (peer.current) {
+      socket.current?.emit('rejectCall', {
+        to: initiator ? receiverId : caller,
+        from: yourID,
       });
-
-      peer.on('error', (e) => console.log(JSON.stringify(e)));
-
-      peer.on('signal', (data) => {
-        socket.current?.emit('acceptCall', { signal: data, to: caller });
-      });
-
-      peer.on('stream', (stream: MediaStream) => {
-        if (partnerAudio.current) partnerAudio.current.srcObject = stream;
-      });
-
-      peer.signal(callerSignal);
     }
   };
 
   let UserAudio;
   if (stream) {
-    UserAudio = <audio muted autoPlay ref={userAudio} />;
+    UserAudio = <audio hidden muted ref={userAudio} />;
   }
 
   let PartnerAudio;
   if (callAccepted) {
-    PartnerAudio = <audio ref={partnerAudio} autoPlay />;
+    PartnerAudio = <audio hidden ref={partnerAudio} autoPlay />;
   }
 
   let incomingCall;
@@ -179,9 +172,14 @@ function App() {
     incomingCall = (
       <div>
         <h1>{caller} is calling you</h1>
-        <Button colorScheme="blue" onClick={acceptCall}>
-          Accept
-        </Button>
+        <Flex>
+          <Button mr={2} colorScheme="blue" onClick={acceptCall}>
+            Accept
+          </Button>
+          <Button colorScheme="red" onClick={() => rejectCall(false)}>
+            Decline
+          </Button>
+        </Flex>
       </div>
     );
   }
@@ -192,6 +190,11 @@ function App() {
         {UserAudio}
         {PartnerAudio}
         {incomingCall}
+        {callingUser && (
+          <Button colorScheme="red" onClick={() => rejectCall(true)}>
+            Decline
+          </Button>
+        )}
       </Flex>
       <Flex justify="center" overflowY="auto">
         <Flex h="100%">
@@ -206,8 +209,6 @@ function App() {
                     <Flex justify="space-between" align="center">
                       <Text>{user}</Text>
                       <Button
-                        disabled={startingCall}
-                        isLoading={startingCall && user === receiverId}
                         colorScheme="green"
                         onClick={() => callPeer(user)}
                       >

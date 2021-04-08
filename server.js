@@ -33,5 +33,14 @@ io.on('connection', (socket) => {
   socket.on('acceptCall', (data) => {
     io.to(data.to).emit('callAccepted', data.signal);
   });
+
+  socket.on('rejectCall', (data) => {
+    io.to(data.to).emit('rejectCall', data.from);
+  });
+
+  socket.on('onicecandidate', (data) => {
+    console.log('ice');
+    io.to(data.to).emit('onicecandidate', data.candidate);
+  });
 });
 server.listen(8000, () => console.log('server is running on port 8000'));
