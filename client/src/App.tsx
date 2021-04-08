@@ -41,15 +41,18 @@ function App() {
       // if ref was rendered set stream into audio tag srcObject..
       if (userAudio.current) {
         userAudio.current.srcObject = stream;
-
-        stream
-          .getTracks()
-          .forEach((track) => peer.current?.addTrack(track, stream));
       }
+
+      stream
+        .getTracks()
+        .forEach((track) => peer.current?.addTrack(track, stream));
+      console.log(partnerAudio.current);
+
       peer.current.ontrack = (e) => {
         console.log(e);
         if (partnerAudio.current) partnerAudio.current.srcObject = e.streams[0];
       };
+
       peer.current.onicecandidateerror = (e) => {
         console.log(e);
       };
@@ -64,6 +67,7 @@ function App() {
     });
 
     socket.current.on('hey', async (data: any) => {
+      console.log(data.signal);
       await peer.current?.setRemoteDescription(
         new RTCSessionDescription(data.signal),
       );
@@ -126,24 +130,26 @@ function App() {
   };
 
   const acceptCall = async () => {
-    if (stream && peer.current) {
-      const answer = await peer.current.createAnswer();
-      await peer.current.setLocalDescription(new RTCSessionDescription(answer));
+    setCallAccepted(true);
 
-      // peer.current.onicecandidate = (e) => {
-      //   socket.current?.emit('onicecandidate', {
-      //     candidate: e.candidate,
-      //     to: caller,
-      //   });
-      // };
+    setTimeout(async () => {
+      if (stream && peer.current) {
+        const answer = await peer.current.createAnswer();
+        peer.current.setLocalDescription(new RTCSessionDescription(answer));
 
-      socket.current?.emit('acceptCall', {
-        signal: answer,
-        to: caller,
-      });
+        peer.current.onicecandidate = (e) => {
+          socket.current?.emit('onicecandidate', {
+            candidate: e.candidate,
+            to: caller,
+          });
+        };
 
-      setCallAccepted(true);
-    }
+        socket.current?.emit('acceptCall', {
+          signal: answer,
+          to: caller,
+        });
+      }
+    }, 100);
   };
 
   const rejectCall = async (initiator: boolean) => {
@@ -163,9 +169,7 @@ function App() {
   }
 
   let PartnerAudio;
-  if (callAccepted) {
-    PartnerAudio = <audio hidden ref={partnerAudio} autoPlay />;
-  }
+  PartnerAudio = <audio hidden ref={partnerAudio} autoPlay />;
 
   let incomingCall;
   if (receivingCall) {
