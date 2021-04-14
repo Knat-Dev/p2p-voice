@@ -29,7 +29,14 @@ function App() {
   // Signle peer per client
   const peer = useRef<RTCPeerConnection>(
     new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        {
+          urls: 'turn:numb.viagenie.ca',
+          username: 'knat.dev.93@gmail.com',
+          credential: 'qweasd',
+        },
+      ],
     }),
   );
 
