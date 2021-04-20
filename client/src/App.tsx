@@ -46,9 +46,11 @@ function App() {
 
     // I'm getting called..
     socket.current.on('hey', (data: any) => {
-      setReceivingCall(true);
-      setCaller(data.from);
-      setCallerSignal(data.signal);
+      if (data.signal.type === 'offer') {
+        setReceivingCall(true);
+        setCaller(data.from);
+        setCallerSignal(data.signal);
+      }
     });
 
     return () => {
@@ -60,22 +62,22 @@ function App() {
     if (stream) {
       const peer = new Peer({
         initiator: true,
-        trickle: false,
+        trickle: true,
         stream,
-        config: {
-          iceServers: [
-            {
-              urls: 'stun:numb.viagenie.ca',
-              username: 'sultan1640@gmail.com',
-              credential: '98376683',
-            },
-            {
-              urls: 'turn:numb.viagenie.ca',
-              username: 'sultan1640@gmail.com',
-              credential: '98376683',
-            },
-          ],
-        },
+        // config: {
+        //   iceServers: [
+        //     {
+        //       urls: 'stun:numb.viagenie.ca',
+        //       username: 'sultan1640@gmail.com',
+        //       credential: '98376683',
+        //     },
+        //     {
+        //       urls: 'turn:numb.viagenie.ca',
+        //       username: 'sultan1640@gmail.com',
+        //       credential: '98376683',
+        //     },
+        //   ],
+        // },
       });
       setStartingCall(true);
       setReceiverId(id);
@@ -107,7 +109,7 @@ function App() {
       setCallAccepted(true);
       const peer = new Peer({
         initiator: false,
-        trickle: false,
+        trickle: true,
         stream,
       });
 
@@ -174,7 +176,7 @@ function App() {
                       </Button>
                     </Flex>
                   </ListItem>
-                ) : null
+                ) : null,
               )}
             </List>
           </Box>
